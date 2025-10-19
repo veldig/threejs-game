@@ -1,5 +1,5 @@
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 import { randRange } from './utils.js';
 
 export function createLights(scene){
@@ -10,7 +10,6 @@ export function createLights(scene){
 }
 
 export function createArena(scene, world){
-  // Visual ground + invisible physics plane
   const geo = new THREE.CircleGeometry(30, 64);
   const mat = new THREE.MeshStandardMaterial({ color: 0x0f2b5a, metalness: .1, roughness: .8 });
   const disk = new THREE.Mesh(geo, mat);
