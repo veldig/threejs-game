@@ -34,46 +34,95 @@ export function createWorld(canvas){
   const ents = [];
 
   // Orbs
-  for(let i=0;i<12;i++){
-    const pos = new THREE.Vector3(randRange(-12,12), 0.4, randRange(-12,12));
+  for (let i = 0; i < 12; i++) {
+    const pos = new THREE.Vector3(randRange(-12, 12), 0.4, randRange(-12, 12));
     ents.push(createOrb(scene, world, pos));
   }
   // Debris
-  for(let i=0;i<6;i++){
-    const pos = new THREE.Vector3(randRange(-10,10), 0.7, randRange(-10,10));
+  for (let i = 0; i < 6; i++) {
+    const pos = new THREE.Vector3(randRange(-10, 10), 0.7, randRange(-10, 10));
     ents.push(createDebris(scene, world, pos));
   }
 
   // State
-  let input = { f:0,b:0,l:0,r:0 };
+  let input = { f:0, b:0, l:0, r:0 };
   let score = 0, lives = 3, timeLeft = 90, running = true, last = performance.now();
 
   function onResize(){
-    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    camera.aspect = innerWidth / innerHeight; 
+    camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   }
   addEventListener('resize', onResize);
 
-  addEventListener('keydown', (e)=>{
-    if(e.code==='KeyW') input.f=1; if(e.code==='KeyS') input.b=1; if(e.code==='KeyA') input.l=1; if(e.code==='KeyD') input.r=1; if(e.code==='KeyR') location.reload();
+  addEventListener('keydown', (e) => {
+    if (e.code === 'KeyW') input.f = 1;
+    if (e.code === 'KeyS') input.b = 1;
+    if (e.code === 'KeyA') input.l = 1;
+    if (e.code === 'KeyD') input.r = 1;
+    if (e.code === 'KeyR') location.reload();
   });
-  addEventListener('keyup', (e)=>{
-    if(e.code==='KeyW') input.f=0; if(e.code==='KeyS') input.b=0; if(e.code==='KeyA') input.l=0; if(e.code==='KeyD') input.r=0;
+  addEventListener('keyup', (e) => {
+    if (e.code === 'KeyW') input.f = 0;
+    if (e.code === 'KeyS') input.b = 0;
+    if (e.code === 'KeyA') input.l = 0;
+    if (e.code === 'KeyD') input.r = 0;
   });
 
   const moveForce = 12;
 
+  // ---- helpers ----
+  function removeEntity(ent){
+    if (ent.mesh && ent.mesh.parent) ent.mesh.parent.remove(ent.mesh);
+    if (ent.body) world.removeBody(ent.body);
+    removeFromArray(ents, ent);
+  }
+
+  // ---- physics-based collisions on the player ----
+  player.body.addEventListener('collide', (ev) => {
+    const otherBody = ev.body;
+    const ent = ents.find(e => e.body === otherBody);
+    if (!ent) return;
+
+    if (ent.kind === 'orb') {
+      // pickup on contact
+      score += 10;
+      HUD.setScore(score);
+      removeEntity(ent);
+      return;
+    }
+
+    if (ent.kind === 'debris') {
+      // damage only if impact is strong enough (relative velocity threshold)
+      const rel = otherBody.velocity.vsub(player.body.velocity).length();
+      if (rel > 2.0) {
+        lives = Math.max(0, lives - 1);
+        HUD.setLives(lives);
+        // knockback away from debris
+        const away = player.mesh.position.clone()
+          .sub(ent.mesh.position)
+          .setY(0)
+          .normalize()
+          .multiplyScalar(5);
+        player.body.velocity.set(away.x, 0, away.z);
+      }
+    }
+  });
+
   function cameraVectors(){
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
-    dir.y = 0; dir.normalize();
+    dir.y = 0; 
+    dir.normalize();
     const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).negate();
     return { dir, right };
   }
 
   function update(dt){
-    timeLeft = clamp(timeLeft - dt, 0, 999); HUD.setTime(timeLeft.toFixed(0));
+    timeLeft = clamp(timeLeft - dt, 0, 999);
+    HUD.setTime(timeLeft.toFixed(0));
 
+    // Input → force in camera space
     const { dir, right } = cameraVectors();
     const force = new CANNON.Vec3(0,0,0);
     if (input.f) force.vadd(new CANNON.Vec3(dir.x,0,dir.z).scale(moveForce), force);
@@ -84,6 +133,7 @@ export function createWorld(canvas){
 
     world.step(1/60, dt, 3);
 
+    // Sync meshes
     player.mesh.position.copy(player.body.position);
     player.mesh.quaternion.copy(player.body.quaternion);
 
@@ -95,41 +145,24 @@ export function createWorld(canvas){
       }
     }
 
-    // Orb pickup
-    for (const e of [...ents]){
-      if (e.kind==='orb'){
-        const d = e.mesh.position.distanceTo(player.mesh.position);
-        if (d < 0.9){
-          score += 10; HUD.setScore(score);
-          e.mesh.parent.remove(e.mesh); removeFromArray(ents, e);
-        }
-      }
-    }
+    // (no distance-based checks; handled by physics collide events)
 
-    // Debris collision
-    for (const e of ents){
-      if (e.kind==='debris'){
-        const d = e.mesh.position.distanceTo(player.mesh.position);
-        if (d < 1.2 && player.body.velocity.length() > 2.0){
-          lives = Math.max(0, lives-1); HUD.setLives(lives);
-          const away = player.mesh.position.clone().sub(e.mesh.position).setY(0).normalize().multiplyScalar(5);
-          player.body.velocity.set(away.x, 0, away.z);
-        }
-      }
+    // Win/Lose
+    if (running && ents.filter(e => e.kind === 'orb').length === 0){
+      running = false; 
+      HUD.showOverlay('Reboot complete! You win!\nScore: ' + score, () => location.reload());
     }
-
-    if (running && ents.filter(e=>e.kind==='orb').length===0){
-      running = false; HUD.showOverlay('Reboot complete! You win!\nScore: '+score, ()=>location.reload());
-    }
-    if (running && (timeLeft<=0 || lives<=0)){
-      running = false; HUD.showOverlay('Game Over\nScore: '+score, ()=>location.reload());
+    if (running && (timeLeft <= 0 || lives <= 0)){
+      running = false; 
+      HUD.showOverlay('Game Over\nScore: ' + score, () => location.reload());
     }
 
     controls.update();
   }
 
   function frame(t){
-    const dt = (t - last)/1000; last = t;
+    const dt = (t - last) / 1000; 
+    last = t;
     update(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);

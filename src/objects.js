@@ -45,8 +45,20 @@ export function createOrb(scene, world, pos){
   const mesh = new THREE.Mesh(geom, mat);
   mesh.position.copy(pos);
   scene.add(mesh);
-  return { mesh, kind: 'orb' };
+
+  // Add a kinematic-like body so we get contact events without pushing stuff around
+  const shape = new CANNON.Sphere(0.35);
+  const body = new CANNON.Body({
+    mass: 0,                // static
+    shape,
+    collisionResponse: false // do NOT physically push the player
+  });
+  body.position.set(pos.x, pos.y, pos.z);
+  world.addBody(body);
+
+  return { mesh, body, kind: 'orb' };
 }
+
 
 export function createDebris(scene, world, pos){
   const geom = new THREE.DodecahedronGeometry(0.7);
