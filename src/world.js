@@ -48,6 +48,9 @@ export function createWorld(canvas){
   let input = { f:0, b:0, l:0, r:0 };
   let score = 0, lives = 3, timeLeft = 90, running = true, last = performance.now();
 
+  // NEW: queue entities to remove safely after physics step
+  const removalQueue = new Set();
+
   function onResize(){
     camera.aspect = innerWidth / innerHeight; 
     camera.updateProjectionMatrix();
@@ -85,10 +88,10 @@ export function createWorld(canvas){
     if (!ent) return;
 
     if (ent.kind === 'orb') {
-      // pickup on contact
+      // Enqueue for removal (do NOT remove during step)
+      removalQueue.add(ent);
       score += 10;
       HUD.setScore(score);
-      removeEntity(ent);
       return;
     }
 
@@ -133,6 +136,12 @@ export function createWorld(canvas){
 
     world.step(1/60, dt, 3);
 
+    // Process queued removals AFTER physics step
+    if (removalQueue.size) {
+      for (const ent of removalQueue) removeEntity(ent);
+      removalQueue.clear();
+    }
+
     // Sync meshes
     player.mesh.position.copy(player.body.position);
     player.mesh.quaternion.copy(player.body.quaternion);
@@ -144,8 +153,6 @@ export function createWorld(canvas){
         e.mesh.quaternion.copy(e.body.quaternion);
       }
     }
-
-    // (no distance-based checks; handled by physics collide events)
 
     // Win/Lose
     if (running && ents.filter(e => e.kind === 'orb').length === 0){
