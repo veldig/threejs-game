@@ -41,24 +41,28 @@ export function createPlayer(scene, world){
 
 export function createOrb(scene, world, pos){
   const geom = new THREE.SphereGeometry(0.35, 20, 20);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x35ff8a, emissive: 0x138a44, emissiveIntensity: 0.9 });
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x35ff8a,
+    emissive: 0x138a44,
+    emissiveIntensity: 0.9
+  });
   const mesh = new THREE.Mesh(geom, mat);
-  mesh.position.copy(pos);
+  // small visual lift so it never z-fights with the arena
+  mesh.position.set(pos.x, pos.y + 0.1, pos.z);
   scene.add(mesh);
 
-  // Add a kinematic-like body so we get contact events without pushing stuff around
+  // Physics body only for contact events; no physical push
   const shape = new CANNON.Sphere(0.35);
   const body = new CANNON.Body({
     mass: 0,                // static
     shape,
-    collisionResponse: false // do NOT physically push the player
+    collisionResponse: false
   });
   body.position.set(pos.x, pos.y, pos.z);
   world.addBody(body);
 
   return { mesh, body, kind: 'orb' };
 }
-
 
 export function createDebris(scene, world, pos){
   const geom = new THREE.DodecahedronGeometry(0.7);
@@ -71,7 +75,12 @@ export function createDebris(scene, world, pos){
   const body = new CANNON.Body({ mass: 0.5, shape });
   body.position.set(pos.x, pos.y, pos.z);
   body.linearDamping = 0.02;
+  // gentle drift
   body.velocity.set(randRange(-1,1), 0, randRange(-1,1));
+  // NEW: add a bit of spin for visual interest
+  body.angularVelocity.set(randRange(-1,1), randRange(-1,1), randRange(-1,1));
+  body.angularDamping = 0.1;
+
   world.addBody(body);
 
   return { mesh, body, kind: 'debris' };
