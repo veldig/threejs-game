@@ -85,6 +85,7 @@ export function createWorld(canvas){
      the Eagles beat the Chiefs, and the celebration beer hit **hard**. 
      Your friends forgot they still need a ride home!
      Rescue them around the arena before time runs out.<br><br>
+     Left is right and right is lef (remember you are drunk too)!<br><br>
      Controls: WASD • Drag to look • R reset`,
     ()=>{ensureAudio();start();}
   );
