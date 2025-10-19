@@ -1,12 +1,11 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
 import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 import { clamp, randRange, removeFromArray } from './utils.js';
 import { HUD } from './hud.js';
-import { createLights, createArena, createPlayer, createOrb, createDebris } from './objects.js';
+import { createLights, createArena, createPlayer, createFriend, createBeerCrate } from './objects.js';
 
 export function createWorld(canvas){
   const scene = new THREE.Scene();
@@ -17,21 +16,15 @@ export function createWorld(canvas){
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
 
+  // FIXED CAMERA (centered feel)
   const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
-  camera.position.set(0, 2.0, 6);
+  camera.position.set(0, 10, 12);
+  camera.lookAt(0, 0, 0);
 
-  // Controls
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minDistance = 3;
-  controls.maxDistance = 18;
-
-  // Post-processing (subtle bloom)
+  // Post-processing
   const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, camera);
-  const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.6, 0.2);
-  composer.addPass(renderPass);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.6, 0.25);
   composer.addPass(bloomPass);
 
   // Physics
@@ -45,15 +38,15 @@ export function createWorld(canvas){
   const player = createPlayer(scene, world);
   const ents = [];
 
-  // Orbs
+  // Friends (collectibles)
   for (let i = 0; i < 12; i++) {
     const pos = new THREE.Vector3(randRange(-12, 12), 0.4, randRange(-12, 12));
-    ents.push(createOrb(scene, world, pos));
+    ents.push(createFriend(scene, world, pos));
   }
-  // Debris
+  // Beer crates (hazards)
   for (let i = 0; i < 6; i++) {
     const pos = new THREE.Vector3(randRange(-10, 10), 0.7, randRange(-10, 10));
-    ents.push(createDebris(scene, world, pos));
+    ents.push(createBeerCrate(scene, world, pos));
   }
 
   // State
@@ -62,10 +55,10 @@ export function createWorld(canvas){
 
   HUD.setScore(score); HUD.setLives(lives); HUD.setTime(timeLeft);
 
-  // Queue removals after physics step
+  // Safe removal queue
   const removalQueue = new Set();
 
-  // --- Audio (autoplay-safe: created on first Start click) ---
+  // --- Audio (autoplay-safe on first click/Enter) ---
   let audioCtx = null;
   function ensureAudio(){
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -87,20 +80,28 @@ export function createWorld(canvas){
     hit(){ beep(200, 0.12, 'square', 0.06); }
   };
 
-  // --- Start overlay ---
-  function makeOverlay(html, onClick){
+  // --- Start overlay (story) ---
+  function overlay(html, onClick){
     const div = document.createElement('div');
     div.className = 'overlay';
-    div.innerHTML = `<div>${html}<br><span class="btn">Continue</span></div>`;
+    div.innerHTML = `<div style="max-width:680px;line-height:1.3">
+      ${html}
+      <br><span class="btn">Start</span></div>`;
     div.addEventListener('click', () => { onClick?.(); div.remove(); });
     document.body.appendChild(div);
     return div;
   }
 
-  const startOverlay = makeOverlay('Orb Salvager<br>Collect orbs before power runs out', () => {
-    ensureAudio();
-    start();
-  });
+  overlay(
+    `You’re an alien from the Andromeda galaxy who just watched the Super Bowl —
+     you saw the Eagles beat the Chiefs and the celebration beer hit **hard**. 
+     Your shuttle leaves soon, but all your friends forgot they still need a ride! 
+     Rescue them around the arena before time runs out.<br><br>
+     <b>Drunk hint:</b> your left/right are swapped — A is right, D is left. 
+     The camera stays centered so you don’t lose them.<br><br>
+     Controls: WASD (A/D reversed) • R to reset`,
+    () => { ensureAudio(); start(); }
+  );
 
   function start(){
     if (running) return;
@@ -112,21 +113,13 @@ export function createWorld(canvas){
 
   function gameOver(win){
     running = false;
-    const msg = win ? `Reboot complete! You win!<br>Score: ${score}<br>Time left: ${Math.max(0, timeLeft|0)}s`
-                    : `Game Over<br>Score: ${score}`;
-    makeOverlay(msg, () => location.reload());
+    const msg = win
+      ? `Everyone’s aboard! 🛸<br>Friends rescued: ${score/10}<br>Time left: ${Math.max(0, timeLeft|0)}s`
+      : `You missed the shuttle 😵<br>Friends rescued: ${score/10}`;
+    overlay(msg, () => location.reload());
   }
 
-  // Events
-  function onResize(){
-    camera.aspect = innerWidth / innerHeight; 
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
-    bloomPass.setSize(innerWidth, innerHeight);
-  }
-  addEventListener('resize', onResize);
-
+  // Input
   addEventListener('keydown', (e) => {
     if (e.code === 'KeyW') input.f = 1;
     if (e.code === 'KeyS') input.b = 1;
@@ -142,22 +135,31 @@ export function createWorld(canvas){
     if (e.code === 'KeyD') input.r = 0;
   });
 
+  function onResize(){
+    camera.aspect = innerWidth / innerHeight; 
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+    bloomPass.setSize(innerWidth, innerHeight);
+  }
+  addEventListener('resize', onResize);
+
   const moveForce = 12;
 
-  // ---- helpers ----
+  // Helper: remove entity
   function removeEntity(ent){
     if (ent.mesh && ent.mesh.parent) ent.mesh.parent.remove(ent.mesh);
     if (ent.body) world.removeBody(ent.body);
     removeFromArray(ents, ent);
   }
 
-  // ---- physics-based collisions on the player ----
+  // Collisions
   player.body.addEventListener('collide', (ev) => {
     const otherBody = ev.body;
     const ent = ents.find(e => e.body === otherBody);
     if (!ent) return;
 
-    if (ent.kind === 'orb') {
+    if (ent.kind === 'friend') {
       removalQueue.add(ent);
       score += 10;
       HUD.setScore(score);
@@ -165,28 +167,24 @@ export function createWorld(canvas){
       return;
     }
 
-    if (ent.kind === 'debris') {
+    if (ent.kind === 'beer') {
       const rel = otherBody.velocity.vsub(player.body.velocity).length();
       if (rel > 2.0) {
         lives = Math.max(0, lives - 1);
         HUD.setLives(lives);
         sfx.hit();
-        // knockback away from debris
         const away = player.mesh.position.clone()
-          .sub(ent.mesh.position)
-          .setY(0)
-          .normalize()
-          .multiplyScalar(5);
+          .sub(ent.mesh.position).setY(0).normalize().multiplyScalar(5);
         player.body.velocity.set(away.x, 0, away.z);
       }
     }
   });
 
+  // Movement uses camera axes; A/D are intentionally reversed
   function cameraVectors(){
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
-    dir.y = 0; 
-    dir.normalize();
+    dir.y = 0; dir.normalize();
     const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).negate();
     return { dir, right };
   }
@@ -197,18 +195,22 @@ export function createWorld(canvas){
       HUD.setTime(timeLeft.toFixed(0));
     }
 
-    // Input → force in camera space
+    // Apply input as forces
     const { dir, right } = cameraVectors();
     const force = new CANNON.Vec3(0,0,0);
-    if (input.f) force.vadd(new CANNON.Vec3(dir.x,0,dir.z).scale(moveForce), force);
-    if (input.b) force.vadd(new CANNON.Vec3(-dir.x,0,-dir.z).scale(moveForce), force);
-    if (input.r) force.vadd(new CANNON.Vec3(right.x,0,right.z).scale(moveForce), force);
-    if (input.l) force.vadd(new CANNON.Vec3(-right.x,0,-right.z).scale(moveForce), force);
+
+    if (input.f) force.vadd(new CANNON.Vec3(dir.x,0,dir.z).scale(12), force);
+    if (input.b) force.vadd(new CANNON.Vec3(-dir.x,0,-dir.z).scale(12), force);
+
+    // DRUNK twist: A/D reversed → A adds +right, D adds -right
+    if (input.l) force.vadd(new CANNON.Vec3(right.x,0,right.z).scale(12), force);
+    if (input.r) force.vadd(new CANNON.Vec3(-right.x,0,-right.z).scale(12), force);
+
     player.body.applyForce(force);
 
     world.step(1/60, dt, 3);
 
-    // Process queued removals AFTER physics step
+    // Remove after step
     if (removalQueue.size) {
       for (const ent of removalQueue) removeEntity(ent);
       removalQueue.clear();
@@ -227,21 +229,19 @@ export function createWorld(canvas){
     }
 
     // Win/Lose
-    if (running && ents.filter(e => e.kind === 'orb').length === 0){
+    if (running && ents.filter(e => e.kind === 'friend').length === 0){
       gameOver(true);
     }
     if (running && (timeLeft <= 0 || lives <= 0)){
       gameOver(false);
     }
-
-    controls.update();
   }
 
   function frame(t){
     const dt = (t - last) / 1000; 
     last = t;
     update(dt);
-    composer.render(); // use post-processing
+    composer.render();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
